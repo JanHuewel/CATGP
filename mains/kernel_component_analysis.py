@@ -5,9 +5,7 @@ import itertools
 
 import Datasets
 from GaussianProcess import *
-from Kernels import ChangepointKernel
 from PatternMining import apriori, subset
-from DataGenerator import DataGenerator
 from gpytorch.kernels import *
 from gpytorch.likelihoods.gaussian_likelihood import GaussianLikelihood
 from helpFunctions import get_string_representation_of_kernel as gsr2, generate_kernel_from_polish_string as generate_kernel
@@ -54,6 +52,8 @@ def gsr(kernel_expression):
         return "LIN"
     elif kernel_expression._get_name() == "PeriodicKernel":
         return "PER"
+    elif kernel_expression._get_name() == "MaternKernel":
+        return "MAT"
     else:
         return kernel_expression._get_name()
 def gpm_to_itemset(gp):
@@ -105,7 +105,7 @@ def test():
     print(gsr2(kernel))
     print(gsr2(kernel_to_sop(kernel)))
 
-def main():
+def main_single_dataset():
     data = Datasets.dataset_d8_temperature
     title = "Temperature"
     label_x = "Normalized time"
@@ -180,7 +180,46 @@ def main():
 
     plt.show()
 
+def main_multiple_dataset():
+    file_path = "data/Plane_TRAIN.txt"
+    base_kernels = [PeriodicKernel(), LinearKernel()]
+    iterations = 3
+    minSupp = 0.1
+
+    print("Reading file")
+    file = open(file_path)
+    file_content = file.read()
+    file.close()
+    file_lines = file_content.split("\n")
+    datasets = []
+    for line in file_lines[:-1]:
+        datasets.append(torch.tensor([float(x) for x in line.split('  ')[1:]])) # label is still part of the dataset
+
+    models = []
+    likelihoods = []
+
+    print("Modelling datasets")
+    for i, dataset in enumerate(datasets):
+        print(f"Dataset {i}: Label {dataset[0]}")
+        if dataset[0] != 7: # filter for specific class
+            continue
+        data = Data(torch.linspace(-1,1,len(dataset)-1), dataset[1:])
+        data.normalize_z()
+        k, l = CKS(data, GaussianLikelihood(), base_kernels, iterations)
+        models.append(kernel_to_sop(k))
+        likelihoods.append(l)
+
+    print("Extracting patterns")
+    # convert models into item sets and perform fim
+    pattern_database = [gpm_to_itemset(k) for k in models]
+
+    print("Applying Apriori")
+    frequent_patterns = apriori(pattern_database, minSupp)
+    print(f"frequent_patterns: {frequent_patterns}")
+    frequent_patterns.sort(key=(lambda x: x[1]), reverse=True)
+    print(f"frequent_patterns: {frequent_patterns}")
+
 
 
 if __name__=="__main__":
-    main()
+    main_multiple_dataset()
